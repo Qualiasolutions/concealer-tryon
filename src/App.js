@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as faceMesh from '@mediapipe/face_mesh';
 import './App.css';
 
@@ -35,14 +35,12 @@ const CONCEALER_SHADES = {
   }
 };
 
-// Face outline landmarks for creating the face contour
 const FACE_CONTOUR = [
   10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
   397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
   172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109
 ];
 
-// Concealer application regions - under eye areas
 const CONCEALER_REGIONS = {
   leftEye: [246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153, 145, 144, 163, 7],
   rightEye: [466, 388, 387, 386, 385, 384, 398, 362, 382, 381, 380, 374, 373, 390, 249]
@@ -57,35 +55,122 @@ function App() {
   const [facePosition, setFacePosition] = useState({ isCorrect: false });
   const [texturePatterns, setTexturePatterns] = useState({});
 
-  // New effect for loading textures
-  useEffect(() => {
-    const loadTextures = async () => {
-      const patterns = {};
-      const ctx = canvasRef.current?.getContext('2d');
-      if (!ctx) return;
-
-      for (const [shade, config] of Object.entries(CONCEALER_SHADES)) {
-        const img = new Image();
-        img.src = config.texture;
-        await new Promise((resolve) => {
-          img.onload = () => {
-            patterns[shade] = ctx.createPattern(img, 'repeat');
-            resolve();
-          };
-        });
-      }
-      setTexturePatterns(patterns);
-    };
-
-    if (canvasRef.current) {
-      loadTextures();
-    }
+  const checkFacePosition = useCallback((landmarks) => {
+    const centerX = landmarks[6].x;
+    const centerY = landmarks[6].y;
+    
+    const isCorrect = (
+      centerX > 0.4 && centerX < 0.6 &&
+      centerY > 0.4 && centerY < 0.6
+    );
+    
+    setFacePosition({ isCorrect });
   }, []);
 
+  const drawFaceOutline = useCallback((ctx, landmarks) => {
+    ctx.beginPath();
+    ctx.strokeStyle = facePosition.isCorrect ? '#4CAF50' : '#FFA726';
+    ctx.lineWidth = 2;
+
+    FACE_CONTOUR.forEach((index, i) => {
+      const point = landmarks[index];
+      const x = point.x * ctx.canvas.width;
+      const y = point.y * ctx.canvas.height;
+      
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+
+    ctx.closePath();
+    ctx.stroke();
+  }, [facePosition.isCorrect]);
+
+  const applyConcealer = useCallback((ctx, landmarks) => {
+    const pattern = texturePatterns[activeShade];
+    
+    ctx.fillStyle = pattern || CONCEALER_SHADES[activeShade].color;
+    ctx.globalAlpha = 0.35;
+
+    [CONCEALER_REGIONS.leftEye, CONCEALER_REGIONS.rightEye].forEach(region => {
+      ctx.beginPath();
+      
+      region.forEach((index, i) => {
+        const point = landmarks[index];
+        const x = point.x * ctx.canvas.width;
+        const y = point.y * ctx.canvas.height;
+        
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+
+      ctx.closePath();
+      ctx.fill();
+    });
+
+    ctx.globalAlpha = 1.0;
+  }, [activeShade, texturePatterns]);
+
+  const onResults = useCallback((results) => {
+    if (!canvasRef.current || !videoRef.current) return;
+
+    const canvasCtx = canvasRef.current.getContext('2d');
+    canvasRef.current.width = videoRef.current.videoWidth;
+    canvasRef.current.height = videoRef.current.videoHeight;
+
+    canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    canvasCtx.save();
+    canvasCtx.scale(-1, 1);
+    canvasCtx.translate(-canvasRef.current.width, 0);
+
+    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+      setFaceDetected(true);
+      const landmarks = results.multiFaceLandmarks[0];
+      drawFaceOutline(canvasCtx, landmarks);
+      applyConcealer(canvasCtx, landmarks);
+      checkFacePosition(landmarks);
+    } else {
+      setFaceDetected(false);
+    }
+
+    canvasCtx.restore();
+  }, [drawFaceOutline, applyConcealer, checkFacePosition]);
+
+  const initFaceMesh = useCallback(async () => {
+    const faceMeshModel = new faceMesh.FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`
+    });
+
+    faceMeshModel.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    faceMeshModel.onResults(onResults);
+
+    if (videoRef.current) {
+      const detectFace = async () => {
+        await faceMeshModel.send({ image: videoRef.current });
+        requestAnimationFrame(detectFace);
+      };
+      detectFace();
+    }
+  }, [onResults]);
+
+  // Camera setup effect
   useEffect(() => {
+    let stream = null;
+
     async function setupCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        stream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: 640 },
             height: { ideal: 800 },
@@ -110,124 +195,58 @@ function App() {
     setupCamera();
 
     return () => {
-      if (videoRef.current?.srcObject) {
-        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, []);
+  }, [initFaceMesh]);
 
-  const initFaceMesh = async () => {
-    const faceMeshModel = new faceMesh.FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`
-    });
-
-    faceMeshModel.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-
-    faceMeshModel.onResults(onResults);
-
-    if (videoRef.current) {
-      const detectFace = async () => {
-        await faceMeshModel.send({ image: videoRef.current });
-        requestAnimationFrame(detectFace);
-      };
-      detectFace();
-    }
-  };
-
-  const drawFaceOutline = (ctx, landmarks) => {
-    ctx.beginPath();
-    ctx.strokeStyle = facePosition.isCorrect ? '#4CAF50' : '#FFA726';
-    ctx.lineWidth = 2;
-
-    FACE_CONTOUR.forEach((index, i) => {
-      const point = landmarks[index];
-      const x = point.x * ctx.canvas.width;
-      const y = point.y * ctx.canvas.height;
-      
-      if (i === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
+  // Texture loading effect
+  useEffect(() => {
+    const loadTextures = async () => {
+      console.log('Starting texture loading...');
+      const patterns = {};
+      const ctx = canvasRef.current?.getContext('2d');
+      if (!ctx) {
+        console.error('No canvas context available');
+        return;
       }
-    });
 
-    ctx.closePath();
-    ctx.stroke();
-  };
-
-  const applyConcealer = (ctx, landmarks) => {
-    // Get the pattern for the active shade
-    const pattern = texturePatterns[activeShade];
-    
-    // Set concealer properties
-    ctx.fillStyle = pattern || CONCEALER_SHADES[activeShade].color; // Fallback to solid color if pattern not loaded
-    ctx.globalAlpha = 0.35; // Adjust opacity for natural look
-
-    // Apply concealer to each under-eye region
-    [CONCEALER_REGIONS.leftEye, CONCEALER_REGIONS.rightEye].forEach(region => {
-      ctx.beginPath();
-      
-      region.forEach((index, i) => {
-        const point = landmarks[index];
-        const x = point.x * ctx.canvas.width;
-        const y = point.y * ctx.canvas.height;
-        
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
+      for (const [shade, config] of Object.entries(CONCEALER_SHADES)) {
+        try {
+          console.log(`Loading texture for ${shade}: ${config.texture}`);
+          const img = new Image();
+          img.src = config.texture;
+          await new Promise((resolve, reject) => {
+            img.onload = () => {
+              console.log(`Successfully loaded image for ${shade}`);
+              const pattern = ctx.createPattern(img, 'repeat');
+              if (pattern) {
+                patterns[shade] = pattern;
+                console.log(`Created pattern for ${shade}`);
+                resolve();
+              } else {
+                reject(new Error('Failed to create pattern'));
+              }
+            };
+            img.onerror = (e) => {
+              console.error(`Failed to load image for ${shade}:`, e);
+              reject(new Error(`Failed to load image: ${config.texture}`));
+            };
+          });
+        } catch (error) {
+          console.error(`Error loading texture for ${shade}:`, error);
         }
-      });
+      }
+      
+      console.log('Final patterns:', Object.keys(patterns));
+      setTexturePatterns(patterns);
+    };
 
-      ctx.closePath();
-      ctx.fill();
-    });
-
-    // Reset opacity
-    ctx.globalAlpha = 1.0;
-  };
-
-  const onResults = (results) => {
-    if (!canvasRef.current || !videoRef.current) return;
-
-    const canvasCtx = canvasRef.current.getContext('2d');
-    canvasRef.current.width = videoRef.current.videoWidth;
-    canvasRef.current.height = videoRef.current.videoHeight;
-
-    canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-    canvasCtx.save();
-    canvasCtx.scale(-1, 1);
-    canvasCtx.translate(-canvasRef.current.width, 0);
-
-    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-      setFaceDetected(true);
-      const landmarks = results.multiFaceLandmarks[0];
-      drawFaceOutline(canvasCtx, landmarks);
-      applyConcealer(canvasCtx, landmarks);
-      checkFacePosition(landmarks);
-    } else {
-      setFaceDetected(false);
+    if (canvasRef.current) {
+      loadTextures();
     }
-
-    canvasCtx.restore();
-  };
-
-  const checkFacePosition = (landmarks) => {
-    const centerX = landmarks[6].x;
-    const centerY = landmarks[6].y;
-    
-    const isCorrect = (
-      centerX > 0.4 && centerX < 0.6 &&
-      centerY > 0.4 && centerY < 0.6
-    );
-    
-    setFacePosition({ isCorrect });
-  };
+  }, []);
 
   return (
     <div className="app-container">
