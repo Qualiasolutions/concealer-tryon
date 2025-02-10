@@ -5,26 +5,35 @@ import './App.css';
 function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const [concealerColor, setConcealerColor] = useState('rgba(255, 0, 0, 0.3)'); // Initial concealer color
+  const [concealerColor, setConcealerColor] = useState('rgba(255, 220, 180, 0.5)');
+  const [activeShade, setActiveShade] = useState('light1');
 
   const predefinedShades = {
-    "light": "rgba(255, 220, 180, 0.5)",
-    "medium": "rgba(255, 180, 100, 0.5)",
-    "dark": "rgba(180, 120, 80, 0.5)",
-    "red": "rgba(255, 0, 0, 0.3)", // Example Red shade
+    "light1": { color: "rgba(255, 220, 180, 0.5)", name: "Fair" },
+    "light2": { color: "rgba(255, 210, 170, 0.5)", name: "Light" },
+    "light3": { color: "rgba(255, 200, 160, 0.5)", name: "Light Medium" },
+    "medium1": { color: "rgba(255, 190, 150, 0.5)", name: "Medium" },
+    "medium2": { color: "rgba(255, 180, 140, 0.5)", name: "Medium Tan" },
+    "medium3": { color: "rgba(255, 170, 130, 0.5)", name: "Tan" },
+    "dark1": { color: "rgba(235, 160, 120, 0.5)", name: "Deep" },
+    "dark2": { color: "rgba(215, 150, 110, 0.5)", name: "Rich" },
+    "dark3": { color: "rgba(195, 140, 100, 0.5)", name: "Deep Rich" },
+    "dark4": { color: "rgba(175, 130, 90, 0.5)", name: "Deep Dark" },
   };
 
   useEffect(() => {
     async function setupCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        videoRef.current.srcObject = stream;
-
-        videoRef.current.addEventListener('loadeddata', () => {
-          predict();
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 640, height: 480 } 
         });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.addEventListener('loadeddata', predict);
+        }
       } catch (err) {
         console.error("Error accessing camera:", err);
+        alert("Please enable camera access to use the virtual concealer try-on.");
       }
     }
 
@@ -34,6 +43,7 @@ function App() {
           return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`;
         }
       });
+
       faceMeshModel.setOptions({
         maxNumFaces: 1,
         refineLandmarks: true,
@@ -41,78 +51,111 @@ function App() {
         minTrackingConfidence: 0.5
       });
 
-      faceMeshModel.onResults((results) => {
-        drawResults(results);
-      });
+      faceMeshModel.onResults(drawResults);
 
       async function drawResults(results) {
         if (!videoRef.current || !canvasRef.current) return;
+        
         const videoWidth = videoRef.current.videoWidth;
         const videoHeight = videoRef.current.videoHeight;
-
+        
         canvasRef.current.width = videoWidth;
         canvasRef.current.height = videoHeight;
-
+        
         const canvasCtx = canvasRef.current.getContext('2d');
+        canvasCtx.save();
         canvasCtx.clearRect(0, 0, videoWidth, videoHeight);
-
+        
         if (results.multiFaceLandmarks) {
           for (const landmarks of results.multiFaceLandmarks) {
-            drawConcealer(canvasCtx, landmarks, videoWidth, videoHeight, concealerColor);
+            drawConcealer(canvasCtx, landmarks, videoWidth, videoHeight);
           }
         }
+        canvasCtx.restore();
       }
 
-      async function renderPrediction() {
-        if (!videoRef.current) return;
-        await faceMeshModel.send({ image: videoRef.current });
-        requestAnimationFrame(renderPrediction);
-      }
-
-      function drawConcealer(canvasCtx, landmarks, videoWidth, videoHeight, color) {
-        canvasCtx.fillStyle = color; // Use selected concealer color
+      function drawConcealer(canvasCtx, landmarks, videoWidth, videoHeight) {
+        // Enhanced under-eye concealer area
+        const leftEyeLandmarks = [247, 30, 29, 27, 28, 56, 190];
+        const rightEyeLandmarks = [467, 260, 259, 257, 258, 286, 413];
+        
+        // Draw left under-eye
+        canvasCtx.fillStyle = concealerColor;
         canvasCtx.beginPath();
-
-        // Under-eye landmarks (Adjust as needed - IMPORTANT!)
-        const landmarkIndices = [133, 173, 157, 158, 159, 160, 161, 246];
-
-        landmarkIndices.forEach(index => {
+        leftEyeLandmarks.forEach((index, i) => {
           const landmark = landmarks[index];
           const x = landmark.x * videoWidth;
           const y = landmark.y * videoHeight;
-          canvasCtx.lineTo(x, y);
+          if (i === 0) canvasCtx.moveTo(x, y);
+          else canvasCtx.lineTo(x, y);
         });
-
+        canvasCtx.closePath();
+        canvasCtx.fill();
+        
+        // Draw right under-eye
+        canvasCtx.beginPath();
+        rightEyeLandmarks.forEach((index, i) => {
+          const landmark = landmarks[index];
+          const x = landmark.x * videoWidth;
+          const y = landmark.y * videoHeight;
+          if (i === 0) canvasCtx.moveTo(x, y);
+          else canvasCtx.lineTo(x, y);
+        });
         canvasCtx.closePath();
         canvasCtx.fill();
       }
 
+      async function renderPrediction() {
+        if (videoRef.current) {
+          await faceMeshModel.send({ image: videoRef.current });
+        }
+        requestAnimationFrame(renderPrediction);
+      }
+
       renderPrediction();
     }
-    setupCamera();
-  }, [concealerColor]); // Re-run effect when concealerColor changes
 
-  const handleShadeChange = (color) => {
-    setConcealerColor(color);
+    setupCamera();
+  }, [concealerColor]);
+
+  const handleShadeChange = (id, shade) => {
+    setConcealerColor(shade.color);
+    setActiveShade(id);
   };
 
   return (
     <div className="App">
       <header className="App-header">
         <h1>Virtual Concealer Try-On</h1>
-        <video
-          ref={videoRef}
-          autoPlay
-        />
-        <canvas ref={canvasRef} className="output_canvas" />
+        
+        <div className="camera-container">
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+          />
+          <canvas 
+            ref={canvasRef}
+            className="output_canvas"
+          />
+        </div>
 
-        {/* Shade Selection */}
         <div className="shade-selector">
-          {Object.entries(predefinedShades).map(([name, color]) => (
-            <button key={name} onClick={() => handleShadeChange(color)}>
-              {name}
-            </button>
-          ))}
+          <h2>Choose Your Shade</h2>
+          <div className="shade-selector-scroll">
+            {Object.entries(predefinedShades).map(([id, shade]) => (
+              <button
+                key={id}
+                className={`shade-button ${activeShade === id ? 'active' : ''}`}
+                onClick={() => handleShadeChange(id, shade)}
+                style={{
+                  backgroundColor: shade.color.replace(/[^,]+\)/, '1)')
+                }}
+              >
+                {shade.name}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
     </div>
