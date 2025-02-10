@@ -9,16 +9,16 @@ function App() {
   const [activeShade, setActiveShade] = useState('light1');
 
   const predefinedShades = {
-    "light1": { color: "rgba(255, 220, 180, 0.5)", name: "Fair" },
-    "light2": { color: "rgba(255, 210, 170, 0.5)", name: "Light" },
-    "light3": { color: "rgba(255, 200, 160, 0.5)", name: "Light Medium" },
-    "medium1": { color: "rgba(255, 190, 150, 0.5)", name: "Medium" },
-    "medium2": { color: "rgba(255, 180, 140, 0.5)", name: "Medium Tan" },
-    "medium3": { color: "rgba(255, 170, 130, 0.5)", name: "Tan" },
-    "dark1": { color: "rgba(235, 160, 120, 0.5)", name: "Deep" },
-    "dark2": { color: "rgba(215, 150, 110, 0.5)", name: "Rich" },
-    "dark3": { color: "rgba(195, 140, 100, 0.5)", name: "Deep Rich" },
-    "dark4": { color: "rgba(175, 130, 90, 0.5)", name: "Deep Dark" },
+    "light1": { color: "rgba(255, 220, 180, 0.7)", name: "Fair" },
+    "light2": { color: "rgba(255, 210, 170, 0.7)", name: "Light" },
+    "light3": { color: "rgba(255, 200, 160, 0.7)", name: "Light Medium" },
+    "medium1": { color: "rgba(255, 190, 150, 0.7)", name: "Medium" },
+    "medium2": { color: "rgba(255, 180, 140, 0.7)", name: "Medium Tan" },
+    "medium3": { color: "rgba(255, 170, 130, 0.7)", name: "Tan" },
+    "dark1": { color: "rgba(235, 160, 120, 0.7)", name: "Deep" },
+    "dark2": { color: "rgba(215, 150, 110, 0.7)", name: "Rich" },
+    "dark3": { color: "rgba(195, 140, 100, 0.7)", name: "Deep Rich" },
+    "dark4": { color: "rgba(175, 130, 90, 0.7)", name: "Deep Dark" },
   };
 
   useEffect(() => {
@@ -80,12 +80,56 @@ function App() {
       }
 
       function drawConcealer(canvasCtx, landmarks, videoWidth, videoHeight) {
-        // Enhanced under-eye concealer area
-        const leftEyeLandmarks = [247, 30, 29, 27, 28, 56, 190];
-        const rightEyeLandmarks = [467, 260, 259, 257, 258, 286, 413];
+        // Draw face mesh points for visualization
+        canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        landmarks.forEach(landmark => {
+          canvasCtx.beginPath();
+          canvasCtx.arc(
+            landmark.x * videoWidth,
+            landmark.y * videoHeight,
+            1,
+            0,
+            2 * Math.PI
+          );
+          canvasCtx.fill();
+        });
+
+        // Enhanced under-eye concealer areas with better coverage
+        const leftEyeLandmarks = [247, 30, 29, 27, 28, 56, 190, 243, 112, 26, 22, 23, 24, 110];
+        const rightEyeLandmarks = [467, 260, 259, 257, 258, 286, 413, 441, 342, 256, 252, 253, 254, 339];
         
-        // Draw left under-eye
+        // Draw guide boxes for under-eye areas
+        canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        canvasCtx.lineWidth = 1;
+        
+        // Left eye guide
+        canvasCtx.beginPath();
+        leftEyeLandmarks.forEach((index, i) => {
+          const landmark = landmarks[index];
+          const x = landmark.x * videoWidth;
+          const y = landmark.y * videoHeight;
+          if (i === 0) canvasCtx.moveTo(x, y);
+          else canvasCtx.lineTo(x, y);
+        });
+        canvasCtx.closePath();
+        canvasCtx.stroke();
+        
+        // Right eye guide
+        canvasCtx.beginPath();
+        rightEyeLandmarks.forEach((index, i) => {
+          const landmark = landmarks[index];
+          const x = landmark.x * videoWidth;
+          const y = landmark.y * videoHeight;
+          if (i === 0) canvasCtx.moveTo(x, y);
+          else canvasCtx.lineTo(x, y);
+        });
+        canvasCtx.closePath();
+        canvasCtx.stroke();
+        
+        // Apply concealer with feathered edges
         canvasCtx.fillStyle = concealerColor;
+        
+        // Left under-eye concealer
         canvasCtx.beginPath();
         leftEyeLandmarks.forEach((index, i) => {
           const landmark = landmarks[index];
@@ -97,7 +141,7 @@ function App() {
         canvasCtx.closePath();
         canvasCtx.fill();
         
-        // Draw right under-eye
+        // Right under-eye concealer
         canvasCtx.beginPath();
         rightEyeLandmarks.forEach((index, i) => {
           const landmark = landmarks[index];
