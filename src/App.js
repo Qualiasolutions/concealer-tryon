@@ -6,26 +6,31 @@ const CONCEALER_SHADES = {
   fair: {
     name: "Fair",
     color: "#fde4c8",
+    texture: "/concealer-textures/fair.svg",
     description: "For very light skin tones"
   },
   light: {
     name: "Light",
     color: "#f8e0bc",
+    texture: "/concealer-textures/light.svg",
     description: "For light skin tones"
   },
   medium: {
     name: "Medium",
     color: "#f0d0a8",
+    texture: "/concealer-textures/medium.svg",
     description: "For medium skin tones"
   },
   tan: {
     name: "Tan",
     color: "#e0c098",
+    texture: "/concealer-textures/tan.svg",
     description: "For tan skin tones"
   },
   deep: {
     name: "Deep",
     color: "#c8a888",
+    texture: "/concealer-textures/deep.svg",
     description: "For deep skin tones"
   }
 };
@@ -50,6 +55,32 @@ function App() {
   const [faceDetected, setFaceDetected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [facePosition, setFacePosition] = useState({ isCorrect: false });
+  const [texturePatterns, setTexturePatterns] = useState({});
+
+  // New effect for loading textures
+  useEffect(() => {
+    const loadTextures = async () => {
+      const patterns = {};
+      const ctx = canvasRef.current?.getContext('2d');
+      if (!ctx) return;
+
+      for (const [shade, config] of Object.entries(CONCEALER_SHADES)) {
+        const img = new Image();
+        img.src = config.texture;
+        await new Promise((resolve) => {
+          img.onload = () => {
+            patterns[shade] = ctx.createPattern(img, 'repeat');
+            resolve();
+          };
+        });
+      }
+      setTexturePatterns(patterns);
+    };
+
+    if (canvasRef.current) {
+      loadTextures();
+    }
+  }, []);
 
   useEffect(() => {
     async function setupCamera() {
@@ -78,7 +109,6 @@ function App() {
 
     setupCamera();
 
-    // Cleanup function
     return () => {
       if (videoRef.current?.srcObject) {
         videoRef.current.srcObject.getTracks().forEach(track => track.stop());
@@ -109,38 +139,11 @@ function App() {
     }
   };
 
-  const onResults = (results) => {
-    if (!canvasRef.current || !videoRef.current) return;
-
-    const canvasCtx = canvasRef.current.getContext('2d');
-    canvasRef.current.width = videoRef.current.videoWidth;
-    canvasRef.current.height = videoRef.current.videoHeight;
-
-    canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-    canvasCtx.save();
-    canvasCtx.scale(-1, 1);
-    canvasCtx.translate(-canvasRef.current.width, 0);
-
-    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-      setFaceDetected(true);
-      const landmarks = results.multiFaceLandmarks[0];
-      drawFaceOutline(canvasCtx, landmarks);
-      applyConcealer(canvasCtx, landmarks);
-      checkFacePosition(landmarks);
-    } else {
-      setFaceDetected(false);
-    }
-
-    canvasCtx.restore();
-  };
-
   const drawFaceOutline = (ctx, landmarks) => {
-    // Set line properties for face outline
     ctx.beginPath();
     ctx.strokeStyle = facePosition.isCorrect ? '#4CAF50' : '#FFA726';
     ctx.lineWidth = 2;
 
-    // Draw face contour
     FACE_CONTOUR.forEach((index, i) => {
       const point = landmarks[index];
       const x = point.x * ctx.canvas.width;
@@ -158,9 +161,11 @@ function App() {
   };
 
   const applyConcealer = (ctx, landmarks) => {
+    // Get the pattern for the active shade
+    const pattern = texturePatterns[activeShade];
+    
     // Set concealer properties
-    const shade = CONCEALER_SHADES[activeShade];
-    ctx.fillStyle = shade.color;
+    ctx.fillStyle = pattern || CONCEALER_SHADES[activeShade].color; // Fallback to solid color if pattern not loaded
     ctx.globalAlpha = 0.35; // Adjust opacity for natural look
 
     // Apply concealer to each under-eye region
@@ -187,8 +192,32 @@ function App() {
     ctx.globalAlpha = 1.0;
   };
 
+  const onResults = (results) => {
+    if (!canvasRef.current || !videoRef.current) return;
+
+    const canvasCtx = canvasRef.current.getContext('2d');
+    canvasRef.current.width = videoRef.current.videoWidth;
+    canvasRef.current.height = videoRef.current.videoHeight;
+
+    canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    canvasCtx.save();
+    canvasCtx.scale(-1, 1);
+    canvasCtx.translate(-canvasRef.current.width, 0);
+
+    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+      setFaceDetected(true);
+      const landmarks = results.multiFaceLandmarks[0];
+      drawFaceOutline(canvasCtx, landmarks);
+      applyConcealer(canvasCtx, landmarks);
+      checkFacePosition(landmarks);
+    } else {
+      setFaceDetected(false);
+    }
+
+    canvasCtx.restore();
+  };
+
   const checkFacePosition = (landmarks) => {
-    // Use nose tip (landmark 6) for position checking
     const centerX = landmarks[6].x;
     const centerY = landmarks[6].y;
     
