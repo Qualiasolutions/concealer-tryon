@@ -1,48 +1,67 @@
+body {
+  font-family: sans-serif;
+  background-color: #f8e8e8; /* Light rose gold background */
+}
+
 .App {
   text-align: center;
 }
 
 .App-header {
-  background-color: #282c34;
+  background-color: #b76e79; /* Rose gold header */
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+  justify-content: flex-start; /* Align items at the top */
+  padding-top: 20px; /* Add some padding at the top */
   color: white;
 }
 
-.output_canvas {
-  border: 1px solid white;
+h1 {
+  font-size: 2.5em;
   margin-bottom: 20px;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.output_canvas {
+  border: 2px solid #d4a373; /* Gold border */
+  margin-bottom: 20px;
+  box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 .shade-selector {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
+  margin-top: 20px;
 }
 
 .shade-selector button {
-  padding: 8px 16px;
-  background-color: #4CAF50;
-  color: white;
+  padding: 10px 20px;
+  background-color: #e6c5b2; /* Light rose gold button */
+  color: #333;
   border: none;
+  border-radius: 5px;
   cursor: pointer;
+  box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.2);
+  transition: background-color 0.3s ease;
 }
 
 .shade-selector button:hover {
-  background-color: #367c39;
+  background-color: #d4a373; /* Gold on hover */
+  color: white;
 }
 
 video {
-  width: 640px; /* Or whatever width you want */
-  height: 480px; /* Or whatever height you want */
-  border: 1px solid #ccc;
-  /* Try removing this first: */
-  /* transform: rotateY(180deg); */
+  width: 640px;
+  height: 480px;
+  border: 2px solid #d4a373; /* Gold border */
+  box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2);
+  /* transform: rotateY(180deg); */ /* Try removing this first */
   /* -webkit-transform: rotateY(180deg); */
-  /* If it's still mirrored, try this: */
+  /* If still mirrored, try this: */
   /* transform: scaleX(-1); */
   /* -webkit-transform: scaleX(-1); */
 }
