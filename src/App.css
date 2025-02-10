@@ -1,4 +1,4 @@
-/* Base Styles */
+/* Modern reset and base styles */
 * {
   margin: 0;
   padding: 0;
@@ -44,13 +44,13 @@ h1 {
 .camera-container {
   position: relative;
   width: 100%;
-  max-width: 640px;
+  max-width: 500px;
   margin: 0 auto 1.5rem;
   border-radius: 15px;
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   background: #000;
-  aspect-ratio: 4/3;
+  aspect-ratio: 0.8;
 }
 
 .camera-video {
@@ -58,6 +58,7 @@ h1 {
   height: 100%;
   object-fit: cover;
   transform: scaleX(-1);
+  background-color: #000;
 }
 
 .camera-canvas {
