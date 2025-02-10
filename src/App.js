@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as faceMesh from '@mediapipe/face_mesh';
+import ShadeMixer from './components/ShadeMixer';
 import './App.css';
 
 const CONCEALER_SHADES = {
@@ -46,13 +47,6 @@ const CONCEALER_REGIONS = {
   rightEye: [466, 388, 387, 386, 385, 384, 398, 362, 382, 381, 380, 374, 373, 390, 249]
 };
 
-const hexToRgba = (hex, alpha = 1) => {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
 function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -62,6 +56,28 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [facePosition, setFacePosition] = useState({ isCorrect: false });
   const [texturePatterns, setTexturePatterns] = useState({});
+  const [showShadeMixer, setShowShadeMixer] = useState(false);
+  const [customShades, setCustomShades] = useState({});
+
+  const hexToRgba = (hex, alpha = 1) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
+  const handleSaveCustomShade = (newShade) => {
+    const shadeId = `custom-${Date.now()}`;
+    setCustomShades(prev => ({
+      ...prev,
+      [shadeId]: {
+        ...newShade,
+        texture: CONCEALER_SHADES.fair.texture // Use default texture
+      }
+    }));
+  };
+
+  const allShades = { ...CONCEALER_SHADES, ...customShades };
 
   const checkFacePosition = useCallback((landmarks) => {
     const centerX = landmarks[6].x;
@@ -97,8 +113,8 @@ function App() {
   }, [facePosition.isCorrect]);
 
   const applyConcealer = useCallback((ctx, landmarks) => {
+    const shade = allShades[activeShade];
     const pattern = texturePatterns[activeShade];
-    const shade = CONCEALER_SHADES[activeShade];
     
     if (pattern) {
       ctx.fillStyle = pattern;
@@ -124,7 +140,7 @@ function App() {
       ctx.closePath();
       ctx.fill();
     });
-  }, [activeShade, texturePatterns]);
+  }, [activeShade, texturePatterns, allShades]);
 
   const onResults = useCallback((results) => {
     if (!canvasRef.current || !videoRef.current) return;
@@ -157,7 +173,7 @@ function App() {
       const ctx = canvasRef.current?.getContext('2d');
       if (!ctx) return;
 
-      for (const [shade, config] of Object.entries(CONCEALER_SHADES)) {
+      for (const [shade, config] of Object.entries(allShades)) {
         try {
           const img = new Image();
           img.src = config.texture;
@@ -184,7 +200,7 @@ function App() {
     if (canvasRef.current) {
       loadTextures();
     }
-  }, []);
+  }, [allShades]);
 
   useEffect(() => {
     const initFaceMesh = async () => {
@@ -221,7 +237,7 @@ function App() {
             width: { ideal: 640 },
             height: { ideal: 800 },
             facingMode: 'user',
-            aspectRatio: { ideal: 0.75 } // Taller aspect ratio
+            aspectRatio: { ideal: 0.75 }
           }
         });
         
@@ -290,8 +306,14 @@ function App() {
 
       <div className="shade-selector">
         <h2>Select Shade</h2>
+        <button 
+          className="create-custom-shade"
+          onClick={() => setShowShadeMixer(true)}
+        >
+          Create Your Own Shade
+        </button>
         <div className="shade-options">
-          {Object.entries(CONCEALER_SHADES).map(([id, shade]) => (
+          {Object.entries(allShades).map(([id, shade]) => (
             <button
               key={id}
               onClick={() => setActiveShade(id)}
@@ -313,6 +335,16 @@ function App() {
           ))}
         </div>
       </div>
+
+      {showShadeMixer && (
+        <div className="shade-mixer-overlay">
+          <ShadeMixer
+            shades={CONCEALER_SHADES}
+            onSaveCustomShade={handleSaveCustomShade}
+            onClose={() => setShowShadeMixer(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
