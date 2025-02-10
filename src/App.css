@@ -2,17 +2,6 @@
   text-align: center;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
 .App-header {
   background-color: #282c34;
   min-height: 100vh;
@@ -24,26 +13,36 @@
   color: white;
 }
 
-.App-link {
-  color: #61dafb;
+.output_canvas {
+  border: 1px solid white;
+  margin-bottom: 20px;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.shade-selector {
+  display: flex;
+  gap: 10px;
 }
+
+.shade-selector button {
+  padding: 8px 16px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+.shade-selector button:hover {
+  background-color: #367c39;
+}
+
 video {
   width: 640px; /* Or whatever width you want */
   height: 480px; /* Or whatever height you want */
   border: 1px solid #ccc;
-}
-
-canvas {
-  width: 640px; /* Or whatever width you want */
-  height: 480px; /* Or whatever height you want */
-  border: 1px solid #ccc;
+  /* Try removing this first: */
+  /* transform: rotateY(180deg); */
+  /* -webkit-transform: rotateY(180deg); */
+  /* If it's still mirrored, try this: */
+  /* transform: scaleX(-1); */
+  /* -webkit-transform: scaleX(-1); */
 }
