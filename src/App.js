@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as faceMesh from '@mediapipe/face_mesh';
+import './App.css';
 
 const CONCEALER_SHADES = {
   fair: {
@@ -34,7 +35,7 @@ const CONCEALER_SHADES = {
   }
 };
 
-const App = () => {
+function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const textureRefs = useRef({});
@@ -58,7 +59,12 @@ const App = () => {
     async function setupCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user' }
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            facingMode: 'user',
+            aspectRatio: { ideal: 4/3 }
+          }
         });
         
         if (videoRef.current) {
@@ -70,6 +76,7 @@ const App = () => {
         }
       } catch (err) {
         console.error("Camera error:", err);
+        alert("Please enable camera access to use the virtual concealer.");
       }
     }
 
@@ -91,12 +98,11 @@ const App = () => {
     faceMeshModel.onResults(onResults);
 
     if (videoRef.current) {
-      const camera = new faceMesh.Camera(videoRef.current, {
-        onFrame: async () => {
-          await faceMeshModel.send({image: videoRef.current});
-        }
-      });
-      camera.start();
+      const detectFace = async () => {
+        await faceMeshModel.send({ image: videoRef.current });
+        requestAnimationFrame(detectFace);
+      };
+      detectFace();
     }
   };
 
@@ -108,6 +114,9 @@ const App = () => {
     canvasRef.current.height = videoRef.current.videoHeight;
 
     canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    canvasCtx.save();
+    canvasCtx.scale(-1, 1); // Flip context horizontally
+    canvasCtx.translate(-canvasRef.current.width, 0);
 
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
       setFaceDetected(true);
@@ -117,13 +126,14 @@ const App = () => {
     } else {
       setFaceDetected(false);
     }
+
+    canvasCtx.restore();
   };
 
   const drawFaceMesh = (ctx, landmarks) => {
     ctx.lineWidth = 1;
     ctx.strokeStyle = facePosition.isCorrect ? '#4CAF50' : '#FFA726';
     
-    // Draw face mesh connections
     for (const connection of faceMesh.FACEMESH_TESSELATION) {
       const start = landmarks[connection[0]];
       const end = landmarks[connection[1]];
@@ -182,50 +192,59 @@ const App = () => {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-4">
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <h1 className="text-2xl font-bold mb-6 text-center">Virtual Concealer Try-On</h1>
-        
-        <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
+    <div className="app-container">
+      <div className="app-content">
+        <h1 className="app-title">Virtual Concealer Try-On</h1>
+
+        <div className="camera-container">
           {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
-              <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent"></div>
+            <div className="loading-overlay">
+              <div className="loading-spinner"></div>
+              <p>Loading camera...</p>
             </div>
           )}
-          
+
+          {!isLoading && !faceDetected && (
+            <div className="face-guide">
+              <p>Position your face in the center</p>
+            </div>
+          )}
+
           <video
             ref={videoRef}
-            className="w-full h-full object-cover"
+            className="camera-video"
             autoPlay
             playsInline
             muted
           />
           <canvas 
             ref={canvasRef}
-            className="absolute inset-0 w-full h-full"
+            className="camera-canvas"
           />
-          
-          <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-            facePosition.isCorrect ? 'bg-green-500 text-white' : 'bg-orange-400 text-white'
-          }`}>
+
+          <div className={`face-status ${facePosition.isCorrect ? 'detected' : 'searching'}`}>
             {facePosition.isCorrect ? 'Perfect Position!' : 'Center Your Face'}
           </div>
         </div>
 
-        <div className="mt-6">
-          <h2 className="text-lg font-semibold mb-4">Select Shade</h2>
-          <div className="flex space-x-4 overflow-x-auto pb-4">
+        <div className="shade-selector">
+          <h2>Select Shade</h2>
+          <div className="shade-options">
             {Object.entries(CONCEALER_SHADES).map(([id, shade]) => (
               <button
                 key={id}
                 onClick={() => setActiveShade(id)}
-                className={`flex-shrink-0 w-16 h-16 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                  activeShade === id ? 'ring-2 ring-blue-500 ring-offset-2' : ''
-                }`}
-                style={{ backgroundColor: shade.color }}
+                className={`shade-button ${activeShade === id ? 'active' : ''}`}
                 title={`${shade.name} - ${shade.description}`}
               >
-                <span className="sr-only">{shade.name}</span>
+                <span 
+                  className="shade-preview" 
+                  style={{ backgroundColor: shade.color }}
+                />
+                <div className="shade-info">
+                  <span className="shade-name">{shade.name}</span>
+                  <span className="shade-description">{shade.description}</span>
+                </div>
               </button>
             ))}
           </div>
@@ -233,6 +252,6 @@ const App = () => {
       </div>
     </div>
   );
-};
+}
 
 export default App;
