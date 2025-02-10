@@ -46,9 +46,17 @@ const CONCEALER_REGIONS = {
   rightEye: [466, 388, 387, 386, 385, 384, 398, 362, 382, 381, 380, 374, 373, 390, 249]
 };
 
+const hexToRgba = (hex, alpha = 1) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const faceMeshRef = useRef(null);
   const [activeShade, setActiveShade] = useState('fair');
   const [faceDetected, setFaceDetected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -90,9 +98,13 @@ function App() {
 
   const applyConcealer = useCallback((ctx, landmarks) => {
     const pattern = texturePatterns[activeShade];
+    const shade = CONCEALER_SHADES[activeShade];
     
-    ctx.fillStyle = pattern || CONCEALER_SHADES[activeShade].color;
-    ctx.globalAlpha = 0.35;
+    if (pattern) {
+      ctx.fillStyle = pattern;
+    } else {
+      ctx.fillStyle = hexToRgba(shade.color, 0.35);
+    }
 
     [CONCEALER_REGIONS.leftEye, CONCEALER_REGIONS.rightEye].forEach(region => {
       ctx.beginPath();
@@ -112,8 +124,6 @@ function App() {
       ctx.closePath();
       ctx.fill();
     });
-
-    ctx.globalAlpha = 1.0;
   }, [activeShade, texturePatterns]);
 
   const onResults = useCallback((results) => {
@@ -141,41 +151,77 @@ function App() {
     canvasCtx.restore();
   }, [drawFaceOutline, applyConcealer, checkFacePosition]);
 
-  const initFaceMesh = useCallback(async () => {
-    const faceMeshModel = new faceMesh.FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`
-    });
+  useEffect(() => {
+    const loadTextures = async () => {
+      const patterns = {};
+      const ctx = canvasRef.current?.getContext('2d');
+      if (!ctx) return;
 
-    faceMeshModel.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
+      for (const [shade, config] of Object.entries(CONCEALER_SHADES)) {
+        try {
+          const img = new Image();
+          img.src = config.texture;
+          await new Promise((resolve, reject) => {
+            img.onload = () => {
+              const pattern = ctx.createPattern(img, 'repeat');
+              if (pattern) {
+                patterns[shade] = pattern;
+                resolve();
+              } else {
+                reject(new Error('Failed to create pattern'));
+              }
+            };
+            img.onerror = () => reject(new Error(`Failed to load image: ${config.texture}`));
+          });
+        } catch (error) {
+          console.error(`Error loading texture for ${shade}:`, error);
+        }
+      }
+      
+      setTexturePatterns(patterns);
+    };
 
-    faceMeshModel.onResults(onResults);
-
-    if (videoRef.current) {
-      const detectFace = async () => {
-        await faceMeshModel.send({ image: videoRef.current });
-        requestAnimationFrame(detectFace);
-      };
-      detectFace();
+    if (canvasRef.current) {
+      loadTextures();
     }
+  }, []);
+
+  useEffect(() => {
+    const initFaceMesh = async () => {
+      faceMeshRef.current = new faceMesh.FaceMesh({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`
+      });
+
+      faceMeshRef.current.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+
+      faceMeshRef.current.onResults(onResults);
+    };
+
+    initFaceMesh();
+
+    return () => {
+      if (faceMeshRef.current) {
+        faceMeshRef.current.close();
+      }
+    };
   }, [onResults]);
 
-  // Camera setup effect
   useEffect(() => {
     let stream = null;
 
-    async function setupCamera() {
+    const setupCamera = async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: 640 },
             height: { ideal: 800 },
             facingMode: 'user',
-            aspectRatio: { ideal: 0.8 }
+            aspectRatio: { ideal: 0.75 } // Taller aspect ratio
           }
         });
         
@@ -183,14 +229,20 @@ function App() {
           videoRef.current.srcObject = stream;
           videoRef.current.onloadeddata = () => {
             setIsLoading(false);
-            initFaceMesh();
+            if (faceMeshRef.current && videoRef.current) {
+              const detectFace = async () => {
+                await faceMeshRef.current.send({ image: videoRef.current });
+                requestAnimationFrame(detectFace);
+              };
+              detectFace();
+            }
           };
         }
       } catch (err) {
         console.error("Camera error:", err);
         alert("Please enable camera access to use the virtual concealer.");
       }
-    }
+    };
 
     setupCamera();
 
@@ -199,53 +251,6 @@ function App() {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [initFaceMesh]);
-
-  // Texture loading effect
-  useEffect(() => {
-    const loadTextures = async () => {
-      console.log('Starting texture loading...');
-      const patterns = {};
-      const ctx = canvasRef.current?.getContext('2d');
-      if (!ctx) {
-        console.error('No canvas context available');
-        return;
-      }
-
-      for (const [shade, config] of Object.entries(CONCEALER_SHADES)) {
-        try {
-          console.log(`Loading texture for ${shade}: ${config.texture}`);
-          const img = new Image();
-          img.src = config.texture;
-          await new Promise((resolve, reject) => {
-            img.onload = () => {
-              console.log(`Successfully loaded image for ${shade}`);
-              const pattern = ctx.createPattern(img, 'repeat');
-              if (pattern) {
-                patterns[shade] = pattern;
-                console.log(`Created pattern for ${shade}`);
-                resolve();
-              } else {
-                reject(new Error('Failed to create pattern'));
-              }
-            };
-            img.onerror = (e) => {
-              console.error(`Failed to load image for ${shade}:`, e);
-              reject(new Error(`Failed to load image: ${config.texture}`));
-            };
-          });
-        } catch (error) {
-          console.error(`Error loading texture for ${shade}:`, error);
-        }
-      }
-      
-      console.log('Final patterns:', Object.keys(patterns));
-      setTexturePatterns(patterns);
-    };
-
-    if (canvasRef.current) {
-      loadTextures();
-    }
   }, []);
 
   return (
@@ -295,7 +300,10 @@ function App() {
             >
               <span 
                 className="shade-preview" 
-                style={{ backgroundColor: shade.color }}
+                style={{ 
+                  backgroundColor: shade.color,
+                  boxShadow: activeShade === id ? `0 0 0 2px white, 0 0 0 4px ${shade.color}` : 'none'
+                }}
               />
               <div className="shade-info">
                 <span className="shade-name">{shade.name}</span>
