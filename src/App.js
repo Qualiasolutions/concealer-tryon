@@ -1,47 +1,47 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as faceMesh from '@mediapipe/face_mesh';
-import './App.css';
 
 const CONCEALER_SHADES = {
   fair: {
     name: "Fair",
-    color: "rgba(253, 228, 200, 0.6)",
-    texture: "/concealer-textures/fair.png",
+    color: "#fde4c8",
+    texture: "/concealer-textures/fair.svg",
     description: "For very light skin tones"
   },
   light: {
     name: "Light",
-    color: "rgba(248, 224, 188, 0.6)",
-    texture: "/concealer-textures/light.png",
+    color: "#f8e0bc",
+    texture: "/concealer-textures/light.svg",
     description: "For light skin tones"
   },
   medium: {
     name: "Medium",
-    color: "rgba(240, 208, 168, 0.6)",
-    texture: "/concealer-textures/medium.png",
+    color: "#f0d0a8",
+    texture: "/concealer-textures/medium.svg",
     description: "For medium skin tones"
   },
   tan: {
     name: "Tan",
-    color: "rgba(224, 192, 152, 0.6)",
-    texture: "/concealer-textures/tan.png",
+    color: "#e0c098",
+    texture: "/concealer-textures/tan.svg",
     description: "For tan skin tones"
   },
   deep: {
     name: "Deep",
-    color: "rgba(200, 168, 136, 0.6)",
-    texture: "/concealer-textures/deep.png",
+    color: "#c8a888",
+    texture: "/concealer-textures/deep.svg",
     description: "For deep skin tones"
   }
 };
 
-function App() {
+const App = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const textureRefs = useRef({});
   const [activeShade, setActiveShade] = useState('fair');
   const [faceDetected, setFaceDetected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [facePosition, setFacePosition] = useState({ isCorrect: false });
 
   // Preload textures
   useEffect(() => {
@@ -58,12 +58,7 @@ function App() {
     async function setupCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            facingMode: 'user',
-            aspectRatio: { ideal: 4/3 }
-          }
+          video: { facingMode: 'user' }
         });
         
         if (videoRef.current) {
@@ -74,61 +69,77 @@ function App() {
           };
         }
       } catch (err) {
-        console.error("Camera access error:", err);
-        alert("Please enable camera access to use the virtual concealer.");
-      }
-    }
-
-    async function initFaceMesh() {
-      const faceMeshModel = new faceMesh.FaceMesh({
-        locateFile: (file) => {
-          return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`;
-        }
-      });
-
-      faceMeshModel.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-      });
-
-      faceMeshModel.onResults(onResults);
-
-      if (videoRef.current) {
-        const detectFace = async () => {
-          await faceMeshModel.send({ image: videoRef.current });
-          requestAnimationFrame(detectFace);
-        };
-        detectFace();
+        console.error("Camera error:", err);
       }
     }
 
     setupCamera();
   }, []);
 
+  const initFaceMesh = async () => {
+    const faceMeshModel = new faceMesh.FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+
+    faceMeshModel.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    faceMeshModel.onResults(onResults);
+
+    if (videoRef.current) {
+      const camera = new faceMesh.Camera(videoRef.current, {
+        onFrame: async () => {
+          await faceMeshModel.send({image: videoRef.current});
+        }
+      });
+      camera.start();
+    }
+  };
+
   const onResults = (results) => {
     if (!canvasRef.current || !videoRef.current) return;
 
     const canvasCtx = canvasRef.current.getContext('2d');
-    const videoWidth = videoRef.current.videoWidth;
-    const videoHeight = videoRef.current.videoHeight;
+    canvasRef.current.width = videoRef.current.videoWidth;
+    canvasRef.current.height = videoRef.current.videoHeight;
 
-    canvasRef.current.width = videoWidth;
-    canvasRef.current.height = videoHeight;
-
-    canvasCtx.clearRect(0, 0, videoWidth, videoHeight);
+    canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
       setFaceDetected(true);
-      drawConcealer(canvasCtx, results.multiFaceLandmarks[0], videoWidth, videoHeight);
+      drawFaceMesh(canvasCtx, results.multiFaceLandmarks[0]);
+      applyConcealer(canvasCtx, results.multiFaceLandmarks[0]);
+      checkFacePosition(results.multiFaceLandmarks[0]);
     } else {
       setFaceDetected(false);
     }
   };
 
-  const drawConcealer = (ctx, landmarks, width, height) => {
-    // Define under-eye regions with more precise landmarks
+  const drawFaceMesh = (ctx, landmarks) => {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = facePosition.isCorrect ? '#4CAF50' : '#FFA726';
+    
+    // Draw face mesh connections
+    for (const connection of faceMesh.FACEMESH_TESSELATION) {
+      const start = landmarks[connection[0]];
+      const end = landmarks[connection[1]];
+      
+      ctx.beginPath();
+      ctx.moveTo(start.x * ctx.canvas.width, start.y * ctx.canvas.height);
+      ctx.lineTo(end.x * ctx.canvas.width, end.y * ctx.canvas.height);
+      ctx.stroke();
+    }
+  };
+
+  const applyConcealer = (ctx, landmarks) => {
+    const texture = textureRefs.current[activeShade];
+    if (!texture) return;
+
+    // Define under-eye regions
     const leftEyeRegion = [
       246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153, 145, 144, 163, 7
     ];
@@ -137,105 +148,91 @@ function App() {
     ];
 
     ctx.save();
-    
-    // Apply concealer with texture and blending
-    const shade = CONCEALER_SHADES[activeShade];
-    const texture = textureRefs.current[activeShade];
+    ctx.globalAlpha = 0.6;
 
     [leftEyeRegion, rightEyeRegion].forEach(region => {
       ctx.beginPath();
-      
-      // Create concealer path
       region.forEach((index, i) => {
-        const { x, y } = landmarks[index];
-        const px = x * width;
-        const py = y * height;
-        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        const point = landmarks[index];
+        const x = point.x * ctx.canvas.width;
+        const y = point.y * ctx.canvas.height;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
       });
-      
       ctx.closePath();
-      
-      // Create gradient for smooth edges
-      const bounds = ctx.getImageData(0, 0, width, height);
-      const gradient = ctx.createRadialGradient(
-        bounds.width/2, bounds.height/2, 0,
-        bounds.width/2, bounds.height/2, bounds.width/2
-      );
-      
-      gradient.addColorStop(0, shade.color);
-      gradient.addColorStop(1, 'rgba(255,255,255,0)');
-      
-      // Apply concealer with texture blend
-      ctx.globalCompositeOperation = 'multiply';
-      if (texture) {
-        ctx.clip();
-        ctx.drawImage(texture, 0, 0, width, height);
-      }
-      
-      // Apply color blend
-      ctx.globalCompositeOperation = 'overlay';
-      ctx.fillStyle = gradient;
+
+      // Create pattern from texture
+      const pattern = ctx.createPattern(texture, 'repeat');
+      ctx.fillStyle = pattern;
       ctx.fill();
     });
-    
+
     ctx.restore();
   };
 
+  const checkFacePosition = (landmarks) => {
+    const centerX = landmarks[6].x;
+    const centerY = landmarks[6].y;
+    
+    const isCorrect = (
+      centerX > 0.4 && centerX < 0.6 &&
+      centerY > 0.4 && centerY < 0.6
+    );
+    
+    setFacePosition({ isCorrect });
+  };
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>Virtual Concealer Try-On</h1>
+    <div className="w-full max-w-4xl mx-auto p-4">
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <h1 className="text-2xl font-bold mb-6 text-center">Virtual Concealer Try-On</h1>
         
-        <div className="camera-container">
+        <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
           {isLoading && (
-            <div className="loading-overlay">
-              <div className="loading-spinner"></div>
-              <p>Loading camera...</p>
-            </div>
-          )}
-          
-          {!isLoading && !faceDetected && (
-            <div className="face-guide">
-              <p>Position your face in the center</p>
+            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent"></div>
             </div>
           )}
           
           <video
             ref={videoRef}
+            className="w-full h-full object-cover"
             autoPlay
             playsInline
             muted
           />
           <canvas 
             ref={canvasRef}
-            className="output_canvas"
+            className="absolute inset-0 w-full h-full"
           />
+          
+          <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+            facePosition.isCorrect ? 'bg-green-500 text-white' : 'bg-orange-400 text-white'
+          }`}>
+            {facePosition.isCorrect ? 'Perfect Position!' : 'Center Your Face'}
+          </div>
         </div>
 
-        <div className="shade-selector">
-          <h2>Select Concealer Shade</h2>
-          <div className="shade-options">
+        <div className="mt-6">
+          <h2 className="text-lg font-semibold mb-4">Select Shade</h2>
+          <div className="flex space-x-4 overflow-x-auto pb-4">
             {Object.entries(CONCEALER_SHADES).map(([id, shade]) => (
               <button
                 key={id}
-                className={`shade-button ${activeShade === id ? 'active' : ''}`}
                 onClick={() => setActiveShade(id)}
+                className={`flex-shrink-0 w-16 h-16 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                  activeShade === id ? 'ring-2 ring-blue-500 ring-offset-2' : ''
+                }`}
+                style={{ backgroundColor: shade.color }}
+                title={`${shade.name} - ${shade.description}`}
               >
-                <span 
-                  className="shade-preview" 
-                  style={{ backgroundColor: shade.color }}
-                />
-                <div className="shade-info">
-                  <span className="shade-name">{shade.name}</span>
-                  <span className="shade-description">{shade.description}</span>
-                </div>
+                <span className="sr-only">{shade.name}</span>
               </button>
             ))}
           </div>
         </div>
-      </header>
+      </div>
     </div>
   );
-}
+};
 
 export default App;
